@@ -1,0 +1,1298 @@
+```{r setup, include=FALSE ,echo=FALSE, warning=FALSE}
+#Instalação e requerimento dos pacotes necessários para realização da análise
+
+#install.packages("tidyverse")
+library(tidyverse)
+#install.packages("pdftools")
+library(pdftools)
+#install.packages("DT")
+library(DT)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+#Primeiramente é necessário importação do banco de dados no formato PDF 
+
+arquivo <- pdf_text(file.choose())%>%
+readr::read_lines()
+```
+
+```{r, echo=FALSE, warning=FALSE}
+
+linhas_tabela <- grep("Data/Hora Registro", arquivo)
+
+for (j in 1:length(linhas_tabela)) {
+  
+Robo <- data.frame()
+dados_coelho_ben <- data.frame()
+
+#Estruturando os pontos de início e fim da tabela
+
+linha_tabela_final <- grep("Eventos do Item", arquivo)
+
+#Importando a tabela de número selecionado
+
+tabela <- arquivo[linhas_tabela[j]:linha_tabela_final[j]]
+  
+#Removendo os lixos das tabelas ("COMPRASNET")
+
+linhas_tabela_limpeza <- grep("COMPRASNET", tabela)
+  
+  if(length(linhas_tabela_limpeza) != 0){tabela <- tabela[-c(linhas_tabela_limpeza)]}
+
+linhas_comprasnet <- grep("COMPRASNET",tabela)
+
+  if(length(linhas_comprasnet) != 0){tabela <- tabela[-c(linhas_comprasnet)]}
+
+#Removendo os lixos das tabelas ("comprasnet.gov.br")
+
+linhas_tabela_limpeza2 <- grep("comprasnet.gov.br", tabela)
+  
+  if(length(linhas_tabela_limpeza2) != 0){
+    for (i in 1:length(linhas_tabela_limpeza2)) {
+      tabela <- tabela[-c(linhas_tabela_limpeza2[1]:(linhas_tabela_limpeza2[1] + 1))]
+      
+      linhas_tabela_limpeza2 <- grep("comprasnet.gov.br", tabela)
+      
+      i = i+1
+    }
+  }
+  
+#Removendo os lixos das tabelas ("Fornecedor enviou lance")
+
+linhas_fornecedor <- grep("Fornecedor enviou lance", tabela)
+
+  if(length(linhas_fornecedor)!= 0){
+    fornecedor <- tabela[linhas_fornecedor[1]]
+  }
+
+tabela <- tabela[-c(length(tabela):(length(tabela)- 1))]
+
+#Removendo os lixos das tabelas ("Desempate")
+
+linhas_tabela_limpeza3 <- grep("Desempate", tabela)
+
+
+  if(length(linhas_tabela_limpeza3) != 0){
+     tabela <- tabela[-c(linhas_tabela_limpeza3[1]: length(tabela))]
+  }
+
+#Removendo os lixos das tabelas ("* caso o item tenha sido excluído do leilão")
+
+linhas_tabela_limpeza4 <- grep("*", tabela, fixed=TRUE)
+
+  if(length(linhas_tabela_limpeza4) != 0){
+     tabela <- tabela[-c(linhas_tabela_limpeza4[1])]
+  }
+
+#Pegando a linha do desempate
+
+dados_fornecedor <- tibble()
+
+  if(length(linhas_fornecedor) != 0 ){
+    all_stat_lines1 <- fornecedor %>%
+      str_squish() %>%
+        strsplit(split = " ")
+
+          var_lines1 <- c("CPF/CNPJ", "Data Inicial Desempate", "Hora Inicial Desempate", "Data Desempate", "Hora Desempate", "Fornecedor", "Envio", "Lance", "R$", "Valor do lance")
+  
+               dados_fornecedor <- plyr::ldply(all_stat_lines1) 
+                   colnames(dados_fornecedor) <- var_lines1
+  }
+
+#Pegando o lance vencedor 
+
+linhas_vencedor <- grep("Aceito para:", arquivo)
+
+linha_cancelado <- grep("Situação: Cancelado na aceitação", arquivo)
+
+linhas_analise <- grep("Situação: Em análise", arquivo)
+
+# Caso o pregão tenha sido cancelado
+
+  if(length(linha_cancelado)!= 0){
+    linhas_vencedor <- sort(c(linhas_vencedor,linha_cancelado,linhas_analise))
+
+      pivor <- linhas_vencedor[j]
+
+        all_stat_lines2 <- arquivo[c(pivor,pivor+2)] %>%
+          str_squish() %>%
+             strsplit(split = " ")
+
+                posicao1 <- grep("Cancelado", all_stat_lines2[[1]])
+
+  if(length(posicao1) != 0){
+    termo <- all_stat_lines2[[1]]
+     banco <- cbind(termo[[posicao1 - 1]], termo[[posicao1]], termo[[posicao1+1]], termo[[posicao1+2]])
+  }
+
+posicao2 <- grep("análise:", all_stat_lines2[[1]])
+
+  if(length(posicao2) != 0){
+    termo <- all_stat_lines2[[1]]
+      banco <- cbind(termo[[posicao2-2]], termo[[posicao2-1]], termo[[posicao2]])
+  }
+
+  if(length(posicao1) == 0 & length(posicao2) == 0){
+    termo <- c(all_stat_lines2[[1]],all_stat_lines2[[2]])
+      ponto <- grep("[.]", termo)
+
+  if (length(ponto) == length(termo)){
+    aceito <-  grep("para:", termo)
+      banco <- termo[-c(1:aceito)]
+    }
+  
+  if (length(ponto) < length(termo)){
+  
+    aceito <- grep("para:", termo)
+      banco <- termo[-c(1:aceito)]
+  
+        ponto <- grep("[.]", banco)
+          banco <- banco[-c((length(ponto)+1):length(banco))]
+  }
+  }
+  }
+
+# Caso ainda esteja em situação de análise
+
+  if(length(linhas_analise)!= 0){
+    linhas_vencedor <- sort(c(linhas_vencedor,linhas_analise))
+
+      pivor <- linhas_vencedor[j]
+
+        all_stat_lines2 <- arquivo[c(pivor,pivor+2)] %>%
+          str_squish() %>%
+            strsplit(split = " ")
+
+              posicao <- grep("Situação:", all_stat_lines2[[1]])
+
+  if(length(posicao) != 0){
+   termo <- all_stat_lines2[[1]]
+      banco <- cbind(termo[[posicao]], termo[[posicao+1]], termo[[posicao+2]])
+  }
+
+  if(length(posicao) == 0){
+  
+  termo <- c(all_stat_lines2[[1]],all_stat_lines2[[2]])
+    ponto <- grep("[.]", termo)
+
+  if (length(ponto) == length(termo)){
+   aceito <-  grep("para:", termo)
+     banco <- termo[-c(1:aceito)]
+  }
+  
+  if (length(ponto) < length(termo)){
+  
+    aceito <- grep("para:", termo)
+      banco <- termo[-c(1:aceito)]
+  
+        ponto <- grep("[.]", banco)
+         banco <- banco[-c((length(ponto)+1):length(banco))]
+  }
+  }
+  }
+
+# Caso não tenha itens em situação de análise ou cancelado
+
+linhas_valor <- grep("Valor estimado:", arquivo)
+resultado <- as.numeric()
+resultado2 <- as.numeric()
+
+  if(length(linhas_analise) != 0){
+    resultado <- linhas_analise[grep("TRUE",linhas_analise==linhas_valor[j])]
+  }
+
+  if(length(linha_cancelado) != 0){
+   resultado2 <- linhas_analise[grep("TRUE",linhas_analise==linhas_valor[j])]
+  }
+
+  if(length(resultado)== 0 & length(resultado2) == 0){
+    pivor <- linhas_vencedor[j]
+
+      all_stat_lines3 <- arquivo[c(pivor,pivor+1)] %>%
+        str_squish() %>%
+           strsplit(split = " ")
+
+              termo <- c(all_stat_lines3[[1]],all_stat_lines3[[2]])
+
+                  ponto <- grep("[.]", termo)
+                      ponto <- ponto[length(ponto)]
+
+  if (ponto == length(termo)){
+    aceito <-  grep("para:", termo)
+      banco <- termo[-c(1:aceito)]
+  }
+  
+  if (ponto < length(termo)){
+    aceito <- grep("para:", termo)
+      banco <- termo[-c(1:aceito)]
+  
+        ponto <- grep("[.]", banco)
+          banco <- banco[-c((ponto[length(ponto)]+1):length(banco))]
+  }
+  }
+
+#Tranformando os dados em listas 
+
+linhas_tabela_limpeza5 <- grep("Não existem", tabela)
+
+  if(length(linhas_tabela_limpeza5) != 0){
+     tabela <- tabela[-c(linhas_tabela_limpeza5[1])]
+  }
+
+  all_stat_lines4 <- tabela[2:length(tabela)] %>%
+    str_squish() %>%
+      strsplit(split = " ")
+
+var_lines2 <- c("R", "Valor do lance", "CNPJ", "Data", "Hora")
+  
+dados <- plyr::ldply(all_stat_lines4) 
+colnames(dados) <- var_lines2
+  
+dados <- dados[,2:5]
+  
+#Adicionando o cálculo dos milissegundos 
+
+dados$Mili_secundos <- as.numeric(substring(dados$Hora,10,12))+as.numeric(substring(dados$Hora,7,8))*1000+as.numeric(substring(dados$Hora,4,5))*1000*60 + as.numeric(substring(dados$Hora,1,2))*3600000
+  
+#Cálculo das diferenças de tempo entre os lances (segundos) 
+
+  for (i in 1:nrow(dados)) {
+    if(i == 1){
+      dados$Resposta[i] <- NA
+    }
+    else( dados$Resposta[i] <- (dados$Mili_secundos[i] - dados$Mili_secundos[i-1])/1000)
+  }
+  
+dados$Tempo_batida <- as.numeric(substring(dados$Hora,1,2))*3600 + as.numeric(substring(dados$Hora,4,5))*60 + as.numeric(substring(dados$Hora,7,8))
+
+dados$`Valor do lance2` <-  gsub("[.]","",dados$`Valor do lance`) 
+dados$`Valor do lance2` <- as.numeric(gsub("[,]","",dados$`Valor do lance2`))
+
+#Cálculo das diferenças de valores entre os lances 
+
+  for (i in 1:nrow(dados)) {
+    if(i == 1){
+      dados$Tempo3[i] <- NA
+    }
+    else( dados$Tempo3[i] <- (dados$`Valor do lance2`[i-1] - dados$`Valor do lance2`[i]))
+  }
+
+#Pegando o momento da Batida Iminente
+
+linha_batida_iminente <- grep("Batida iminente", arquivo)
+
+linha <- linha_batida_iminente[j]
+batida <- arquivo[linha+1]
+
+all_stat_lines5 <- batida[1] %>%
+  str_squish() %>%
+  strsplit(split = " ")
+
+dados_batida <- plyr::ldply(all_stat_lines5)
+
+  if(ncol(dados_batida) == 1){
+    batida_iminente <- substring(dados_batida$V1,1,8)
+  }
+
+  if(ncol(dados_batida) > 1){
+    batida_iminente <- substring(dados_batida$V2,1,8)
+  }
+
+batida_iminente <- as.numeric(substring(batida_iminente,1,2))*3600 + as.numeric(substring(batida_iminente,4,5))*60 + as.numeric(substring(batida_iminente,7,8))
+
+remove <- NA
+batida_iminente <- batida_iminente [! batida_iminente %in% remove]
+
+  if(length(batida_iminente) == 0){
+  
+    batida <- arquivo[linha+4]
+  
+      all_stat_lines5 <- batida[1] %>%
+        str_squish() %>%
+         strsplit(split = " ")
+
+          dados_batida <- plyr::ldply(all_stat_lines5)
+
+  if(ncol(dados_batida) == 1){
+   batida_iminente <- substring(dados_batida$V1,1,8)
+  }
+
+  if(ncol(dados_batida) > 1){
+   batida_iminente <- substring(dados_batida$V2,1,8)
+  }
+
+              batida_iminente <- as.numeric(substring(batida_iminente,1,2))*3600 + as.numeric(substring(batida_iminente,4,5))*60 + as.numeric(substring(batida_iminente,7,8))
+}
+
+#Separando os bancos de dados
+
+dados$ID <- seq(1:length(dados$CNPJ))
+
+dados_antes_batida <- dados[dados$Tempo_batida < batida_iminente, ]
+dados_depois_batida <- dados[dados$Tempo_batida >= batida_iminente, ]
+
+#Removendo os lances superiores ao valor estimado
+
+valor <- grep("Valor estimado:",arquivo)
+texto <- arquivo[valor[j]]
+
+all_stat_lines6 <- texto[1] %>%
+  str_squish() %>%
+  strsplit(split = " ")
+
+dados_texto <- plyr::ldply(all_stat_lines6)
+
+valor <- dados_texto$V4
+
+valor <-  gsub("[.]","",valor) 
+valor <- as.numeric(gsub("[,]","",valor))
+
+dados_antes_batida <- dados_antes_batida[dados_antes_batida$`Valor do lance2` <=  valor, ]
+
+# Printando os resultados obtidos 
+
+nome <- grep("Ata de Realização do Pregão Eletrônico", arquivo)
+nome1 <- arquivo[c(nome-1)]
+nome1 <- gsub("                               ","",nome1) 
+nome2 <- arquivo[c(nome)]
+nome2 <- gsub("                                   ","",nome2) 
+nome3 <- arquivo[c(nome+1)]
+nome3 <- gsub("   ","",nome3) 
+nome3 <- paste("                       ", nome3)
+
+  if(j==1){
+    print(c(nome1,nome2,nome3))
+  }
+
+cat(" ", sep = "\n\n")
+cat(" ", sep = "\n\n")
+cat(" ", sep = "\n\n")
+cat(" ", sep = "\n\n")
+
+cat("Número do item: ", j)
+
+cat(" ", sep = "\n\n")
+
+cat(" ", sep = "\n\n")
+
+dados_vencedor <- data.frame() 
+
+valor_lance <- grep("quantidade", banco)
+valor_lance <- (valor_lance - 3)
+lance <- banco[valor_lance]
+dados_vencedor <- dados[dados$`Valor do lance` == lance,]
+
+  if(nrow(dados_fornecedor)== 0){
+    print("Vencedor do pregão eletrónico")
+      cat(paste(banco[1:length(banco)]), sep = " ")
+  }
+
+cat(" ", sep = "\n\n")
+cat(" ", sep = "\n\n")
+
+  if(nrow(dados_vencedor) != 0){
+    print("Lance realizado pelo vencedor do pregão eletrónico")
+      print(dados_vencedor[c(1:4,6)])
+  }
+
+cat(" ", sep = "\n\n")
+
+  if(nrow(dados_vencedor)!=0){
+    if(dados_vencedor$ID == nrow(dados)){
+      print("O lance vencedor foi o último lance do pregão?")
+       print("Sim")
+  }}
+
+  if(nrow(dados_vencedor)!=0){
+    if(dados_vencedor$ID != nrow(dados)){
+      print("O lance vencedor foi o último lance do pregão?")
+        print("Não")
+  }}
+
+cat(" ", sep = "\n\n")
+
+  if(nrow(dados_vencedor)!=0){
+    if(dados_vencedor$ID != nrow(dados)){
+      print("Lances posteriores a oferta vencedora")
+        dados_apos_vencedor <- dados[dados$ID > dados_vencedor$ID, ]
+          print(dados_apos_vencedor[c(1:4,6)])
+  }}
+
+cat(" ", sep = "\n\n")
+
+
+  if(nrow(dados_fornecedor)!= 0){
+    print("Vencedor do pregão eletrónico")
+      cat(paste(banco[1:length(banco)]), sep = " ")
+}
+
+cat(" ", sep = "\n\n")
+
+cat(" ", sep = "\n\n")
+
+  if(nrow(dados_antes_batida) != 0){
+    print("Análise dos dados antes da Batida Iminente")
+      print("Medidas descritivas dos Valores dos lances")
+        print(summary(dados_antes_batida$`Valor do lance2`))
+}
+
+cat(" ", sep = "\n\n")
+
+  if(nrow(dados_batida) != 0){
+    if(ncol(dados_batida) == 1){
+      batida_iminente2 <- substring(dados_batida$V1,1,8)
+    }
+    
+    if(ncol(dados_batida) > 1){
+      batida_iminente2 <- substring(dados_batida$V2,1,8)
+    }
+  
+  print("Horário da batida iminente")
+    print(batida_iminente2)
+  
+cat(" ", sep = "\n\n")
+}
+
+  if(nrow(dados_antes_batida) != 0){
+    print("Horário do primeiro lance válido do pregão e horário do último lance antes da batida Iminente")
+      horario <- cbind(dados_antes_batida$Hora[1], dados_antes_batida$Hora[length(dados_antes_batida$Hora)])
+        colnames(horario) <- c("Horário do primeiro lance válido do pregão", "Horário do último lance antes da batida iminente")
+
+          print(horario)
+}
+
+cat(" ", sep = "\n\n")
+
+  if(nrow(dados_depois_batida) != 0){
+    print("Análise dos dados depois da Batida Iminente")
+      print("Medidas descritivas dos Valores dos lances")
+        print(summary(dados_depois_batida$`Valor do lance2`))
+  }
+
+cat(" ", sep = "\n\n")
+
+  if(nrow(dados_depois_batida) != 0){
+    print("Horário do primeiro lance após a batida iminente e horário do último lance do pregão")
+      horario2 <- cbind(dados_depois_batida$Hora[1], dados_depois_batida$Hora[length(dados_depois_batida$Hora)])
+        colnames(horario2) <- c("Horário do primeiro lance após a batida iminente", "Horário do último lance do pregão")
+
+          print(horario2)
+  }
+
+cat(" ", sep = "\n\n")
+
+  if(nrow(dados_depois_batida) != 0){
+    print("Número de lances após a batida iminente:")
+      print(nrow(dados_depois_batida))
+  }
+
+# Selecionando os possíveis coelhos 
+
+coelho <- grep("Não enviou o anexo de proposta solicitado pelo pregoeiro",arquivo)
+aceite <- grep("Aceite individual da proposta. Fornecedor:",arquivo)
+cancelado <- grep("Item cancelado na aceitação.", arquivo)
+analises <- grep("Item Em Análise.", arquivo)
+
+  if(length(aceite) != 0 & length(coelho) != 0){
+    for (l in 1:(length(aceite)-1)) {
+  
+      if((aceite[l+1]-aceite[l]) > 50){
+        aceite[l] <- aceite[l]
+      }
+      else{aceite[l] <- NA}
+      }
+        aceite <- na.omit(aceite)
+  }
+
+valores <- 0
+
+# Opção 1
+
+  if(length(coelho) != 0 & length(aceite) != 0 & length(analises) == 0 & length(cancelado) == 0){
+    valores <- sort(c(aceite,coelho))
+  
+  for (l in 1:(length(valores)-1)) {
+  
+    if((valores[l+1]-valores[l]) > 50){
+      valores[l] <- valores[l]
+     }
+  
+    else{valores[l+1] <- 0}
+  }
+        valores <- valores[valores!=0]
+}
+
+# Opção 2
+
+  if(length(coelho) != 0 & length(cancelado) != 0 & length(aceite) == 0 & length(analises) == 0){
+    valores <- sort(c(cancelado,coelho))
+  
+    for (l in 1:(length(valores)-1)) {
+  
+      if((valores[l+1]-valores[l]) > 50){
+        valores[l] <- valores[l]
+      }
+  
+      else{valores[l+1] <- 0}
+    }
+        valores <- valores[valores!=0]
+  }
+
+# Opção 3
+
+  if(length(coelho) != 0 & length(cancelado) != 0 & length(aceite) != 0 & length(analises) == 0){
+    valores <- sort(c(cancelado,coelho, aceite))
+  
+    for (l in 1:(length(valores)-1)) {
+  
+      if((valores[l+1]-valores[l]) > 50){
+        valores[l] <- valores[l]
+    }
+  
+    else{valores[l+1] <- 0}
+    }
+      valores <- valores[valores!=0]
+  }
+
+# Opção 4
+
+  if(length(coelho) != 0 & length(cancelado) != 0 & length(aceite) != 0 & length(analises) != 0){
+    valores <- sort(c(cancelado,coelho, aceite, analises))
+  
+      for (l in 1:(length(valores)-1)) {
+  
+        if((valores[l+1]-valores[l]) > 50){
+          valores[l] <- valores[l]
+        }
+  
+        else{valores[l+1] <- 0}
+      }
+          valores <- valores[valores!=0]
+  }
+
+# Opção 5
+
+  if(length(coelho) != 0 & length(cancelado) == 0 & length(aceite) == 0 & length(analises) != 0){
+    valores <- sort(c(coelho, analises))
+  
+      for (l in 1:(length(valores)-1)) {
+  
+        if((valores[l+1]-valores[l]) > 50){
+          valores[l] <- valores[l]
+        }
+  
+        else{valores[l+1] <- 0}
+      }
+        valores <- valores[valores!=0]
+  }
+
+#Opção 6
+
+  if(length(coelho) != 0 & length(cancelado) != 0 & length(aceite) == 0 & length(analises) != 0){
+   valores <- sort(c(coelho, analises,cancelado))
+  
+    for (l in 1:(length(valores)-1)) {
+  
+      if((valores[l+1]-valores[l]) > 50){
+        valores[l] <- valores[l]
+      }
+  
+      else{valores[l+1] <- 0}
+    }
+       valores <- valores[valores!=0]
+  }
+
+#Opção 7
+
+  if(length(coelho) != 0 & length(cancelado) == 0 & length(aceite) != 0 & length(analises) != 0){
+    valores <- sort(c(coelho, analises,aceite))
+  
+      for (l in 1:(length(valores)-1)) {
+  
+        if((valores[l+1]-valores[l]) > 50){
+           valores[l] <- valores[l]
+        }
+  
+        else{valores[l+1] <- 0}
+      }
+           valores <- valores[valores!=0]
+  }
+
+COELHO <- 0
+
+
+  if (length(valores) != 0){
+    texto <- arquivo[valores[j]]
+      Recusa <- grep("Recusa",texto)
+
+  if(length(Recusa) != 0){
+    posicao <- valores[j]
+      texto <- gsub("                      ","",texto) 
+  
+        COELHO <- cbind(arquivo[[posicao-2]], arquivo[[posicao]], arquivo[[posicao+2]])
+  
+            COELHO[[1]] <- gsub("                      ","",COELHO[[1]]) 
+              COELHO[[2]] <- gsub("                      ","",COELHO[[2]]) 
+                COELHO[[3]] <- gsub("                      ","",COELHO[[3]]) 
+                  COELHO[[3]] <- gsub("        ","",COELHO[[3]]) 
+  }
+  }
+
+#Removendo caracteres indesejados e transformando numa lista
+
+Clean_String <- function(string){
+    temp <- tolower(string)
+    temp <- stringr::str_replace_all(temp,"[\\s]+", " ")
+    temp <- stringr::str_split(temp, " ")[[1]]
+    indexes <- which(temp == "")
+    if(length(indexes) > 0){
+      temp <- temp[-indexes]
+    } 
+    return(temp)
+}
+
+valorrs <- 0
+
+  if(COELHO != 0){
+    par <- Clean_String(COELHO[[2]])
+      valorrs <- par[(grep("motivo:", par)-1)]
+        valorrs <- gsub("[.]","",valorrs) 
+  }
+
+dados_pos_coelho1 <- data.frame()
+
+  if(valorrs != 0){
+    dados_pos_coelho1 <- dados[dados$`Valor do lance` == valorrs, ]
+  }
+
+
+## Pegando o coelho para arquivos mais antigos 
+
+  if(COELHO == 0){
+    coelho <- grep("Motivo: Não atendeu a convocação do",arquivo)
+      aceite <- grep("Aceite individual da proposta. Fornecedor:",arquivo)
+        cancelado <- grep("Item cancelado na aceitação.", arquivo)
+          analises <- grep("Item Em Análise.", arquivo)
+
+  if(length(aceite) != 0 & length(coelho) != 0){
+    for (l in 1:(length(aceite)-1)) {
+  
+      if((aceite[l+1]-aceite[l]) > 50){
+        aceite[l] <- aceite[l]
+      }
+      else{aceite[l] <- NA}
+    }
+        aceite <- na.omit(aceite)
+  }
+
+valores <- 0
+
+# Opção 1
+
+  if(length(coelho) != 0 & length(aceite) != 0 & length(analises) == 0 & length(cancelado) == 0){
+    valores <- sort(c(aceite,coelho))
+  
+      for (l in 1:(length(valores)-1)) {
+  
+        if((valores[l+1]-valores[l]) > 140){
+           valores[l] <- valores[l]
+        }
+  
+        else{valores[l+1] <- 0}
+      }
+
+         valores <- valores[valores!=0]
+  
+      for (l in (length(valores)-4):(length(valores))){
+  
+         if((valores[l]- valores[l-1]) > 140){
+           valores[l-1] <- valores[l-1]
+         }
+  
+          else{valores[l] <- 0}
+      }
+         
+             valores <- valores[valores!=0]
+    
+      for (l in 1:(length(valores)-1)) {
+  
+        if((valores[l+1]-valores[l]) > 140){
+          valores[l] <- valores[l]
+        }
+  
+        else{valores[l+1] <- 0}
+      }
+
+          valores <- valores[valores!=0]
+  
+    }
+
+
+# Opção 2
+
+  if(length(coelho) != 0 & length(cancelado) != 0 & length(aceite) == 0 & length(analises) == 0){
+    valores <- sort(c(cancelado,coelho))
+  
+    for (l in 1:(length(valores)-1)) {
+  
+      if((valores[l+1]-valores[l]) > 50){
+       valores[l] <- valores[l]
+      }
+  
+      else{valores[l+1] <- 0}
+    }
+    
+        valores <- valores[valores!=0]
+  
+    for (l in (length(valores)-4):(length(valores))){
+  
+      if((valores[l]- valores[l-1]) > 140){
+        valores[l-1] <- valores[l-1]
+      }
+  
+      else{valores[l] <- 0}
+    }
+        
+        valores <- valores[valores!=0]
+    
+    for (l in 1:(length(valores)-1)) {
+  
+      if((valores[l+1]-valores[l]) > 140){
+        valores[l] <- valores[l]
+      }
+  
+      else{valores[l+1] <- 0}
+    }
+
+        valores <- valores[valores!=0]
+  }
+
+# Opção 3
+
+  if(length(coelho) != 0 & length(cancelado) != 0 & length(aceite) != 0 & length(analises) == 0){
+    valores <- sort(c(cancelado,coelho, aceite))
+  
+      for (l in 1:(length(valores)-1)) {
+  
+        if((valores[l+1]-valores[l]) > 50){
+            valores[l] <- valores[l]
+        }
+  
+        else{valores[l+1] <- 0}
+      }
+    
+          valores <- valores[valores!=0]
+
+    for (l in (length(valores)-4):(length(valores))){
+  
+      if((valores[l]- valores[l-1]) > 140){
+         valores[l-1] <- valores[l-1]
+      }
+  
+      else{valores[l] <- 0}
+    }
+          valores <- valores[valores!=0]
+    
+    for (l in 1:(length(valores)-1)) {
+  
+      if((valores[l+1]-valores[l]) > 140){
+        valores[l] <- valores[l]
+      }
+  
+      else{valores[l+1] <- 0}
+    }
+
+        valores <- valores[valores!=0]
+  }
+
+# Opção 4
+
+  if(length(coelho) != 0 & length(cancelado) != 0 & length(aceite) != 0 & length(analises) != 0){
+    valores <- sort(c(cancelado,coelho, aceite, analises))
+  
+      for (l in 1:(length(valores)-1)) {
+  
+        if((valores[l+1]-valores[l]) > 50){
+          valores[l] <- valores[l]
+        }
+  
+        else{valores[l+1] <- 0}
+      }
+    
+           valores <- valores[valores!=0]
+
+      for (l in (length(valores)-4):(length(valores))){
+  
+        if((valores[l]- valores[l-1]) > 140){
+            valores[l-1] <- valores[l-1]
+        }
+  
+        else{valores[l] <- 0}
+     }
+          valores <- valores[valores!=0]
+    
+      for (l in 1:(length(valores)-1)) {
+  
+        if((valores[l+1]-valores[l]) > 140){
+          valores[l] <- valores[l]
+        }
+  
+        else{valores[l+1] <- 0}
+      }
+
+          valores <- valores[valores!=0]
+    }
+
+# Opção 5
+
+if(length(coelho) != 0 & length(cancelado) == 0 & length(aceite) == 0 & length(analises) != 0){
+  valores <- sort(c(coelho, analises))
+  
+    for (l in 1:(length(valores)-1)) {
+  
+      if((valores[l+1]-valores[l]) > 50){
+        valores[l] <- valores[l]
+      }
+  
+      else{valores[l+1] <- 0}
+    }
+  
+         valores <- valores[valores!=0]
+  
+    for (l in (length(valores)-4):(length(valores))){
+  
+      if((valores[l]- valores[l-1]) > 140){
+        valores[l-1] <- valores[l-1]
+      }
+  
+      else{valores[l] <- 0}
+    }
+    
+        valores <- valores[valores!=0]
+    
+    for (l in 1:(length(valores)-1)) {
+  
+      if((valores[l+1]-valores[l]) > 140){
+        valores[l] <- valores[l]
+      }
+  
+      else{valores[l+1] <- 0}
+    }
+
+        valores <- valores[valores!=0]
+  
+  }
+
+#Opção 6
+
+  if(length(coelho) != 0 & length(cancelado) != 0 & length(aceite) == 0 & length(analises) != 0){
+    valores <- sort(c(coelho, analises,cancelado))
+  
+      for (l in 1:(length(valores)-1)) {
+  
+        if((valores[l+1]-valores[l]) > 50){
+          valores[l] <- valores[l]
+        }
+  
+        else{valores[l+1] <- 0}
+      }
+    
+          valores <- valores[valores!=0]
+
+      for (l in (length(valores)-4):(length(valores))){
+  
+        if((valores[l]- valores[l-1]) > 140){
+          valores[l-1] <- valores[l-1]
+        }
+  
+        else{valores[l] <- 0}
+      }
+    
+          valores <- valores[valores!=0]
+    
+      for (l in 1:(length(valores)-1)) {
+  
+        if((valores[l+1]-valores[l]) > 140){
+          valores[l] <- valores[l]
+        }
+  
+        else{valores[l+1] <- 0}
+      }
+
+          valores <- valores[valores!=0]
+  
+  }
+
+#Opção 7
+
+  if(length(coelho) != 0 & length(cancelado) == 0 & length(aceite) != 0 & length(analises) != 0){
+    valores <- sort(c(coelho, analises,aceite))
+  
+      for (l in 1:(length(valores)-1)) {
+  
+        if((valores[l+1]-valores[l]) > 50){
+          valores[l] <- valores[l]
+        }
+  
+        else{valores[l+1] <- 0}
+      }
+  
+          valores <- valores[valores!=0]
+
+    for (l in (length(valores)-4):(length(valores))){
+  
+      if((valores[l]- valores[l-1]) > 140){
+        valores[l-1] <- valores[l-1]
+      }
+  
+      else{valores[l] <- 0}
+    }
+    
+          valores <- valores[valores!=0]
+    
+    for (l in 1:(length(valores)-1)) {
+  
+      if((valores[l+1]-valores[l]) > 140){
+        valores[l] <- valores[l]
+      }
+  
+      else{valores[l+1] <- 0}
+    }
+
+        valores <- valores[valores!=0]
+  
+  }
+
+COELHO <- 0
+
+  if (length(valores) != 0){
+    texto <- arquivo[valores[j]]
+      Recusa <- grep("Recusa",texto)
+
+  if(length(Recusa) != 0){
+    posicao <- valores[j]
+      texto <- gsub("                      ","",texto) 
+  
+        COELHO <- cbind(arquivo[[posicao-2]], arquivo[[posicao]], arquivo[[posicao+2]])
+  
+          COELHO[[1]] <- gsub("                      ","",COELHO[[1]]) 
+            COELHO[[2]] <- gsub("                      ","",COELHO[[2]]) 
+              COELHO[[3]] <- gsub("                      ","",COELHO[[3]]) 
+                COELHO[[3]] <- gsub("        ","",COELHO[[3]]) 
+  }
+  }
+  }
+
+#Removendo caracteres indesejados e transformando em listas 
+
+Clean_String <- function(string){
+    temp <- tolower(string)
+    temp <- stringr::str_replace_all(temp,"[\\s]+", " ")
+    temp <- stringr::str_split(temp, " ")[[1]]
+    indexes <- which(temp == "")
+    if(length(indexes) > 0){
+      temp <- temp[-indexes]
+    } 
+    return(temp)
+}
+
+valorrs <- 0
+
+  if(COELHO != 0){
+    par1 <- Clean_String(COELHO[[1]])
+      par2 <- Clean_String(COELHO[[2]])
+        par2 <- par2[-c(grep("recusa",par2))]
+          par3 <- Clean_String(COELHO[[3]])
+            par <- c(par1,par2,par3)
+              valorrs <- par[(grep("motivo:", par)-1)]
+                valorrs <- gsub("[.]","",valorrs) 
+}
+
+dados_pos_coelho1 <- data.frame()
+
+  if(valorrs != 0){
+    dados_pos_coelho1 <- dados[dados$`Valor do lance` == valorrs, ]
+  }
+
+
+#Pegando os nomes das empresas pelo CNPJ
+
+  if(nrow(dados_coelho_ben)!= 0){
+  
+    modelo <- dados_coelho_ben$CNPJ
+      alocar <- 0
+        alocar2 <- vector()
+          alocacao <- vector()
+
+  for (i in 1:length(dados_coelho_ben$CNPJ)){
+    alocar <- grep(modelo[1],arquivo)
+      modelo <- modelo[-1]
+        alocar2[i] <- alocar[1]
+  }
+
+  for (i in 1:length(alocar2)){
+    alocacao[i] <- arquivo[alocar2[1]]
+      alocar2 <- alocar2[-1]
+  }
+
+nome <- list()
+
+  for (i in 1:length(alocacao)){
+    nome[[i]] <- Clean_String(alocacao[1])
+      alocacao <- alocacao[-1]
+  }
+
+nao <- vector()
+nao_s <- vector()
+sim <- vector()
+sim_s <- vector()
+
+  for (i in 1:length(nome)){
+    nao <- grep("não",nome[[i]])
+      nao_s[i] <- nao[1]
+  }
+
+  for (i in 1:length(nome)){
+    sim <- grep("sim",nome[[i]])
+      sim_s[i] <- sim[1]
+  }
+
+
+remove <- NA
+sim_s <- sim_s [! sim_s %in% remove]
+nao_s <- nao_s [! nao_s %in% remove]
+nome <- nome [! nome %in% remove]
+
+final <- list()
+finais1 <- list()
+finais2 <- list()
+nomes <- list()
+
+  if(length(sim_s) != 0){
+    for (i in 1:length(nome)){
+      nomes <- nome[[i]]
+        sim <- grep("sim", nomes)
+          final <- 0
+  if(length(sim) != 0){
+     final <- nomes[1:(sim[1]-1)]
+        nao <- grep("não",nomes)
+  
+  if(length(nao) == 0){
+      finais1[[i]] <- final
+  }
+  }
+  }
+  }
+
+finais1 <- finais1[!sapply(finais1, is.null)]
+
+  if(length(nao_s) != 0){
+    for (p in 1:length(nome)){
+      nomes <- nome[[p]]
+        nao <- grep("não",nomes)
+          final <- NULL
+
+  if(length(nao) != 0){
+    final <- nomes[1:(nao[1]-1)]
+  }
+
+sim <- grep("sim",nomes)
+
+  if(length(sim) != 0 & length(final) != 0){
+    sim <- grep("sim",final)
+      final <- final[1:(sim-1)] 
+        sim <- sim[-1]
+  }
+
+      finais2[[p]] <- final
+  }
+  }
+
+finais2 <- finais2[!sapply(finais2, is.null)]
+
+  if(length(finais1) != 0 | length(finais2) != 0){
+    print("Nome das empresas por CNPJ:")
+  }
+
+  if(length(finais1) != 0){
+    print(finais1)
+  }
+
+  if(length(finais2) != 0){
+    print(finais2)
+  }
+  }
+
+cat(" ", sep = "\n\n")
+
+
+
+  if(nrow(dados_depois_batida) != 0){
+  
+    print("Número de lances diagnosticados com o uso de Robôs")
+      Robo <- dados_depois_batida[dados_depois_batida$Resposta < 3 & dados_depois_batida$Tempo3 > 0, ]
+       CNPJ <- Robo[duplicated(Robo$CNPJ),]
+        Robo <- Robo[Robo$CNPJ ==  CNPJ$CNPJ,]
+         print(nrow(Robo))
+
+cat(" ", sep = "\n\n")
+
+          print("Possíveis empresas diagnosticadas com o uso de robôs")
+            print(Robo[c(1:4,6)])
+}
+
+#Pegando os nomes das empresas pelo CNPJ
+
+  if(nrow(Robo)!= 0){
+  
+    modelo <- Robo$CNPJ
+      alocar <- 0
+        alocar2 <- vector()
+            alocacao <- vector()
+
+      for (i in 1:length(Robo$CNPJ)){
+        alocar <- grep(modelo[1],arquivo)
+          modelo <- modelo[-1]
+            alocar2[i] <- alocar[1]
+      }
+
+      for (i in 1:length(alocar2)){
+        alocacao[i] <- arquivo[alocar2[1]]
+            alocar2 <- alocar2[-1]
+      }
+
+nome <- list()
+
+      for (i in 1:length(alocacao)){
+        nome[[i]] <- Clean_String(alocacao[1])
+            alocacao <- alocacao[-1]
+      }
+
+nao <- vector()
+nao_s <- vector()
+sim <- vector()
+sim_s <- vector()
+
+      for (i in 1:length(nome)){
+        nao <- grep("não",nome[[i]])
+          nao_s[i] <- nao[1]
+      }
+
+      for (i in 1:length(nome)){
+        sim <- grep("sim",nome[[i]])
+          sim_s[i] <- sim[1]
+      }
+
+
+remove <- NA
+sim_s <- sim_s [! sim_s %in% remove]
+nao_s <- nao_s [! nao_s %in% remove]
+nome <- nome [! nome %in% remove]
+
+final <- list()
+finais1 <- list()
+finais2 <- list()
+nomes <- list()
+
+    if(length(sim_s) != 0){
+      for (i in 1:length(nome)){
+        nomes <- nome[[i]]
+          sim <- grep("sim", nomes)
+            final <- 0
+    if(length(sim) != 0){
+        final <- nomes[1:(sim[1]-1)]
+          nao <- grep("não",nomes)
+  
+    if(length(nao) == 0){
+         finais1[[i]] <- final
+  }
+  }
+  }
+  }
+
+finais1 <- finais1[!sapply(finais1, is.null)]
+
+  if(length(nao_s) != 0){
+    for (p in 1:length(nome)){
+      nomes <- nome[[p]]
+        nao <- grep("não",nomes)
+          final <- NULL
+
+  if(length(nao) != 0){
+     final <- nomes[1:(nao[1]-1)]
+  }
+
+sim <- grep("sim",nomes)
+
+  if(length(sim) != 0 & length(final) != 0){
+    sim <- grep("sim",final)
+      final <- final[1:(sim-1)] 
+        sim <- sim[-1]
+  }
+          finais2[[p]] <- final
+  }
+  }
+
+finais2 <- finais2[!sapply(finais2, is.null)]
+
+cat(" ", sep = "\n\n")
+
+  if(length(finais1) != 0 | length(finais2) != 0){
+    print("Nome das empresas por CNPJ:")
+  }
+
+  if(length(finais1) != 0){
+    print(str(finais1[!duplicated(finais1)]))
+  }
+
+  if(length(finais2) != 0){
+    print(str(finais2[!duplicated(finais2)]))
+  }
+  }
+
+cat(" ", sep = "\n\n")
+
+  if(COELHO != 0 & nrow(Robo) != 0){
+    print("Possíveis empresas diagnosticadas como coelhos")
+      cat(paste(COELHO[[1]],COELHO[[2]],COELHO[[3]]), sep = " ")
+        cat(" ", sep = "\n\n")
+  }
+
+cat(" ", sep = "\n\n")
+
+  if(COELHO != 0 & nrow(Robo) != 0 ){
+    print("Lance da empresa diagnosticadas como coelhos")
+      print(dados_pos_coelho1[c(1:4,6)])
+  }
+
+cat(" ", sep = "\n\n")
+
+  if(COELHO != 0 & nrow(dados_pos_coelho1) != 0 & nrow(Robo) != 0 ){
+    print("Possível empresa beneficiada com a presença de coelhos")
+      dados_pos_coelho <- dados[dados$`Valor do lance` == valorrs, ]
+
+  if(nrow(dados_pos_coelho) != 0){
+    dados_pos_coelho <- dados_pos_coelho[1,]
+      coelho_posicao <- grep(dados_pos_coelho$`Valor do lance`,dados$`Valor do lance`)
+        dados_coelho_ben <- dados[c(coelho_posicao+1:nrow(dados)),]
+          dados_coelho_ben <- na.omit(dados_coelho_ben)
+            print(dados_coelho_ben[c(1:4,6)])
+  }
+  }
+
+cat(" ", sep = "\n\n")
+
+
+#Imprimindo as listas de lances 
+
+if(nrow(dados) != 0){
+  print("Conjunto de todos os lances do lote")
+   print(dados[c(1:4,6)])
+}
+
+
+j=j+1
+
+}
+
+```
